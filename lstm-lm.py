@@ -1,165 +1,149 @@
 
 # coding: utf-8
 
-# In[118]:
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.autograd as autograd
 import torch.nn.functional as F
 import torch.optim as optim
-
-from tqdm import tqdm_notebook
-
+from tqdm import tqdm
 import codecs
-
-
-# In[173]:
-
-EMBEDDING_SIZE = 100
-HIDDEN_SIZE = 50
-MAX_SEQ_LENGTH = 30
-BATCH_SIZE = 32
-VOCAB_SIZE = 10000
-
-
-# In[178]:
-
-## prepare data
-
-train_path = "iwslt5k.en"
-# train_path = ""
-
-if train_path != "":
-    
-    training_data = []
-    train_vocab = {}
-    with codecs.open(train_path) as fp:
-        for line in fp:
-            words = line.strip().split()
-            for word in words:
-                if word not in train_vocab:
-                    train_vocab[word] = 1
-                else:
-                    train_vocab[word] +=1
-            training_data.append(words + ["eos"])
-    
-else:    
-    training_data = [
-        ("The dog ate the apple eos".split()),
-        ("Everybody read that book eos".split()),
-        ("The cat ate the orange eos".split()),
-        ("Everybody eat the apple eos".split())
-    ]
-    training_data = training_data * 50
-    
-
-print (len(training_data))
-print (training_data[0:3])
-
-
-# In[175]:
-
-# prune vocab based on vocab size
-
 import operator
-sorted_train_vocab = sorted(train_vocab.items(), key=operator.itemgetter(1), reverse=True)
-pruned_vocab = sorted_train_vocab[0:VOCAB_SIZE]
-pruned_vocab = ([i[0] for i in pruned_vocab])
+import argparse
+import h5py
+import json
+import os
 
 
-# In[183]:
+## TODO 
+# Check if parameters are same as saved for processed data
 
-word2idx = {}
-idx2word = {}
-train = []
-word2idx["UNK"] = len(word2idx)
-idx2word[word2idx["UNK"]] = "UNK"
-word2idx["eos"] = len(word2idx)
-idx2word[word2idx["eos"]] = "eos"
+def process_train_data(file_path, vocab_size):
+    
+    word2idx = {}
+    idx2word = {}
+    train = []
 
+    if os.path.exists("data/processed_train.h5") and os.path.exists("data/vocab.json"):
+        print ("Loading processed files..")
+        train = read_h5py("processed_train.h5")
+        word2idx = read_json("vocab.json")
+        idx2word = {value:key for key,value in word2idx.items()}
 
-for idx, sent in enumerate(training_data):
-    for word in sent:
-        if word in pruned_vocab:
-            if word not in word2idx:
-                word2idx[word] = len(word2idx)
-                idx2word[word2idx[word]] = word
-            train.append(word2idx[word])
-        else:
-            train.append(word2idx["UNK"])
-        
-train = np.array(train, dtype=np.int)
+    else:
+        print ("Processing files..")
 
+        if file_path != "":    
+            training_data = []
+            train_vocab = {}
+            with codecs.open(file_path) as fp:
+                for line in fp:
+                    words = line.strip().split()
+                    for word in words:
+                        if word not in train_vocab:
+                            train_vocab[word] = 1
+                        else:
+                            train_vocab[word] +=1
+                    training_data.append(words + ["eos"])
+            
+        else:    
+            training_data = [
+                ("The dog ate the apple eos".split()),
+                ("Everybody read that book eos".split()),
+                ("The cat ate the orange eos".split()),
+                ("Everybody eat the apple eos".split())
+            ]
+            training_data = training_data * 50
+            
 
-# In[184]:
+        print ("Number of words in training: ", len(training_data))
+        print ("A few training examples: ", training_data[0:3])
 
-print(train.shape)
-print (train[0:13])
+        # prune vocab based on vocab size
+        sorted_train_vocab = sorted(train_vocab.items(), key=operator.itemgetter(1), reverse=True)
+        pruned_vocab = sorted_train_vocab[0:vocab_size]
+        pruned_vocab = ([i[0] for i in pruned_vocab])
 
+        # create word2idx    
+        word2idx["UNK"] = len(word2idx)
+        idx2word[word2idx["UNK"]] = "UNK"
+        word2idx["eos"] = len(word2idx)
+        idx2word[word2idx["eos"]] = "eos"
 
-# In[192]:
+        for idx, sent in enumerate(training_data):
+            for word in sent:
+                if word in pruned_vocab:
+                    if word not in word2idx:
+                        word2idx[word] = len(word2idx)
+                        idx2word[word2idx[word]] = word
+                    train.append(word2idx[word])
+                else:
+                    train.append(word2idx["UNK"])
+                
+        train = np.array(train, dtype=np.int)
+
+        print(train.shape)
+        if os.path.isdir("data"):
+            write_h5py(train, "train", "processed_train.h5")
+            write_json(word2idx, "vocab.json")
+
+    return train, word2idx, idx2word
+
+def write_json(data, file_name):
+    f = open("data/"+file_name,"w")
+    f.write(json.dumps(data))
+    f.close()
+
+def read_json(file_name):
+    with open("data/"+file_name) as f:
+        return json.load(f)
+
+def write_h5py(data, data_name, file_name):
+    handle = h5py.File("data/"+file_name, 'w')
+    handle.create_dataset(data_name, data=data)
+    print ("Saved data in: data/"+file_name)
+
+def read_h5py(file_name):
+    handle = h5py.File("data/"+file_name, 'r')
+    return handle["train"][:]
+
 
 # set input in the form of tensor
 def prepare_input(batch):
-    tensor_ids = torch.from_numpy(batch).to(device)
-    return tensor_ids
+     tensor_ids = torch.from_numpy(batch).to(device)
+     return tensor_ids
 
-
-# In[193]:
-
-def batchify(train, max_sequence_length, batch_size, word2idx):
-    
+def batchify(train, max_sequence_length, batch_size, word2idx):    
     batch_sequence_length = max_sequence_length*batch_size
+
     pad = np.array((batch_sequence_length - len(train)%(batch_sequence_length)) * [word2idx["eos"]], dtype=np.int)
-    batches = np.concatenate((train, pad)).reshape((-1, BATCH_SIZE, MAX_SEQ_LENGTH))
+
+    batches = np.concatenate((train, pad)).reshape((-1, batch_size, max_sequence_length))
     # batches is now [num_batches x sentences_in_minibatch x words_in_sentence]
     
     # torch expects words_in_sentence x sentences_in_minibatch
     # so, swap
     batches = np.swapaxes(batches, 1, 2)
     
-    print(batches.shape)
+    print("Shape of data: ", batches.shape)
     return batches
 
-batches = batchify(train, MAX_SEQ_LENGTH, BATCH_SIZE, word2idx)
-
-
-# In[187]:
-
-#print(batches[0, :, 0])
-#print(batches[0, :, 1])
-print (batches[0,:-1,0])
-
-
-# In[188]:
-
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-else:
-    device = torch.device("cpu")
-
-
-# In[189]:
-
-## LSTM Model
-
 class LSTMLM(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size):
+    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size):
         super(LSTMLM, self).__init__()
         
         self.hidden_size = hidden_size   
+        self.batch_size = batch_size
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size)
         self.hidden2output = nn.Linear(hidden_size, vocab_size)
-        self.hidden = self.init_hidden()
-        
+        self.hidden = self.init_hidden()        
+
     def init_hidden(self):
         # set the dimenionaly of the hidden layer
-        # parameters are: num_layers, minibatch_size, hidden_dim
-        cell = autograd.Variable(torch.zeros(1, BATCH_SIZE, self.hidden_size))
-        hid = autograd.Variable(torch.zeros(1, BATCH_SIZE, self.hidden_size))
+        cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size)).to(device)
+        hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size)).to(device)
         return (cell, hid)
     
     def forward(self, sequence):
@@ -167,83 +151,63 @@ class LSTMLM(nn.Module):
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
         output_space = self.hidden2output(lstm_out)
         output_scores = F.log_softmax(output_space, dim=2)
-
         return output_scores
 
 
-# In[190]:
+def train_model(batches, word2idx, epochs, number_of_words):
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch in tqdm(batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
+            model.zero_grad()
+            model.hidden = model.init_hidden()
+            
+            X = prepare_input(batch[:-1,:])
+            y = prepare_input(batch[1:,:])
 
-# define loss, model and optimization
-model = LSTMLM(EMBEDDING_SIZE, HIDDEN_SIZE, len(word2idx))
-loss_function = nn.NLLLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.1)
+            output_scores = model(X).to(device)
+
+            true_y = y.contiguous().view(-1, 1).squeeze()
+            pred_y = output_scores.view(-1, len(word2idx))
+            
+            loss = loss_function(pred_y, true_y)
+            total_loss += loss.data
+            
+            loss.backward()
+            optimizer.step()
+        print ("Loss: ", total_loss/number_of_words)
 
 
-# In[191]:
+def process_test_data(file_name, word2idx):
 
-## training
-epochs = 10
-for epoch in range(epochs):
+    if file_name != "":
+        
+        test_data = []
+        with codecs.open(file_name) as fp:
+            for line in fp:
+                test_data.append(line.strip().split() + ["eos"])
+    else:        
+        test_data = [
+            ("The dog ate the apple eos".split()),
+            ("Everybody read that book eos".split()),
+            ("The cat ate the orange eos".split()),
+            ("Everybody eat the apple eos".split())
+        ]
+
+    print ("Size of test data: ", len(test_data))
+    test = []
+    for sentence in test_data:
+        for word in sentence:
+            if word in word2idx:
+                test.append(word2idx[word])
+            else:
+                test.append(word2idx["UNK"])
+    test = np.array(test, dtype=np.int)
+
+    return test
+
+def evaluate(batches, number_of_words):
     total_loss = 0
-    for batch in tqdm_notebook(batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
-        model.zero_grad()
-        model.hidden = model.init_hidden()
-        
-        X = prepare_input(batch[:-1,:])
-        y = prepare_input(batch[1:,:])
-
-        output_scores = model(X).to(device)
-
-        true_y = y.contiguous().view(-1, 1).squeeze()
-        pred_y = output_scores.view(-1, len(word2idx))
-        
-        loss = loss_function(pred_y, true_y)
-        total_loss += loss.data
-        
-        loss.backward()
-        optimizer.step()
-    print ("Loss: ", total_loss/BATCH_SIZE)
-
-
-# In[130]:
-
-# test data
-test_path = "iwslt1k.en"
-#train_path = ""
-
-if test_path != "":
-    
-    test_data = []
-    with codecs.open(test_path) as fp:
-        for line in fp:
-            test_data.append(line.strip().split() + ["eos"])
-else:        
-    test_data = [
-        ("The dog ate the apple eos".split()),
-        ("Everybody read that book eos".split()),
-        ("The cat ate the orange eos".split()),
-        ("Everybody eat the apple eos".split())
-    ]
-
-print (len(test_data))
-test = []
-for sentence in test_data:
-    for word in sentence:
-        if word in word2idx:
-            test.append(word2idx[word])
-        else:
-            test.append(word2idx["UNK"])
-test = np.array(test, dtype=np.int)
-test_batches = batchify(test, MAX_SEQ_LENGTH, BATCH_SIZE, word2idx)
-
-
-# In[131]:
-
-# perplexity on a test set
-
-def evaluate(batch_in):
-    total_loss = 0
-    for batch in tqdm_notebook(batch_in):
+    for batch in tqdm(batches):
         model.zero_grad()
         model.hidden = model.init_hidden()
 
@@ -257,12 +221,42 @@ def evaluate(batch_in):
         loss = loss_function(pred_y, true_y)
         total_loss += loss.data
 
-    print ("Loss: ", total_loss/BATCH_SIZE )
-
-evaluate(test_batches)
+    print ("Loss: ", total_loss/number_of_words )
 
 
-# In[ ]:
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='LSTM language model')
 
+    parser.add_argument('--train', type=str, help='training data')
+    parser.add_argument('--test', type=str, help='test data')
+    parser.add_argument('--embedding_size', type=int, default=650, help='word embedding size')
+    parser.add_argument('--rnn_size', type=int, default=650, help='hidden layer size')
+    parser.add_argument('--sequence_length', type=int, default=35)
+    parser.add_argument('--batch_size', type=int, default=20)
+    parser.add_argument('--vocab_size', type=int, default=10000)
+    parser.add_argument('--epochs', type=int, default=10)
 
+    args = parser.parse_args()
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size)
+    nwords = len(train)
+
+    batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
+
+    # define loss, model and optimization
+    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size).to(device)
+    loss_function = nn.NLLLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.1)
+
+    # train
+    train_model(batches, word2idx, args.epochs, nwords)
+
+    # evaluate model
+    test = process_test_data(args.test, word2idx)
+    test_batches = batchify(test, args.sequence_length, args.batch_size, word2idx)
+    evaluate(test_batches, len(test))
