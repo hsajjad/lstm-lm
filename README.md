@@ -7,3 +7,4 @@ TODO
 * Separate data preprocessing
 * Dropout
 * Highway layer
+* Multiple LSTM layers

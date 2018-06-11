@@ -175,7 +175,7 @@ def train_model(batches, word2idx, epochs, number_of_words):
             loss.backward()
             optimizer.step()
 
-        print ("Loss: ", total_loss.data.numpy()/number_of_words )
+        print ("Loss: ", total_loss.data.cpu().numpy()/number_of_words )
 
 def process_test_data(file_name, word2idx):
 
@@ -222,7 +222,7 @@ def evaluate(batches, number_of_words):
         total_loss += loss.data
 
 
-    print ("Loss: ", total_loss.numpy()/number_of_words )
+    print ("Loss: ", total_loss.cpu().numpy()/number_of_words )
 
 
 if __name__ == "__main__":
