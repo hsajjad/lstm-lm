@@ -136,7 +136,7 @@ class LSTMLM(nn.Module):
         self.hidden_size = hidden_size   
         self.batch_size = batch_size
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
-
+        # added separate layers to have control over each layer
         self.lstms = nn.ModuleList([])
         self.lstms.append(nn.LSTM(embedding_size, hidden_size))
         for l in range(1,layers):
