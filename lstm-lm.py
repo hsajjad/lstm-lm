@@ -130,13 +130,18 @@ def batchify(train, max_sequence_length, batch_size, word2idx):
     return batches
 
 class LSTMLM(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size):
+    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers):
         super(LSTMLM, self).__init__()
         
         self.hidden_size = hidden_size   
         self.batch_size = batch_size
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
-        self.lstm = nn.LSTM(embedding_size, hidden_size)
+
+        self.lstms = nn.ModuleList([])
+        self.lstms.append(nn.LSTM(embedding_size, hidden_size))
+        for l in range(1,layers):
+            self.lstms.append(nn.LSTM(hidden_size, hidden_size))
+
         self.hidden2output = nn.Linear(hidden_size, vocab_size)
         self.hidden = self.init_hidden()        
 
@@ -148,8 +153,16 @@ class LSTMLM(nn.Module):
     
     def forward(self, sequence):
         embeds = self.word_embeddings(sequence)
-        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
-        output_space = self.hidden2output(lstm_out)
+        lstm_outs = []
+        hiddens = []
+        lstm_out, self.hidden = self.lstms[0](embeds, self.hidden)
+        lstm_outs.append(lstm_out)
+        hiddens.append(self.hidden)
+        for idx in range(1, len(self.lstms)):
+            lstm_out, self.hidden = self.lstms[idx](lstm_outs[idx-1], hiddens[idx-1])
+            lstm_outs.append(lstm_out)
+            hiddens.append(self.hidden)
+        output_space = self.hidden2output(lstm_outs[-1])
         output_scores = F.log_softmax(output_space, dim=2)
         return output_scores
 
@@ -236,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=20)
     parser.add_argument('--vocab_size', type=int, default=10000)
     parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--rnn_layers', type=int, default=1)
 
     args = parser.parse_args()
 
@@ -250,10 +264,11 @@ if __name__ == "__main__":
     batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
 
     # define loss, model and optimization
-    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size).to(device)
+    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers).to(device)
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
+    print (str(model))
     # train
     train_model(batches, word2idx, args.epochs, nwords)
 
