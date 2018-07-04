@@ -167,10 +167,10 @@ class LSTMLM(nn.Module):
         return output_scores
 
 
-def train_model(batches, word2idx, epochs, number_of_words):
+def train_model(train_batches, word2idx, epochs, valid_batches):
     for epoch in range(epochs):
         total_loss = 0
-        for batch in tqdm(batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
+        for batch in tqdm(train_batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
             model.zero_grad()
             model.hidden = model.init_hidden()
             
@@ -188,7 +188,8 @@ def train_model(batches, word2idx, epochs, number_of_words):
             loss.backward()
             optimizer.step()
 
-        print ("Loss: ", total_loss.data.cpu().numpy()/number_of_words )
+        print ("Training loss: ", total_loss.data.cpu().numpy()/len(train_batches))
+        print ("Validation loss: ", evaluate(valid_batches)/len(valid_batches))
 
 def process_test_data(file_name, word2idx):
 
@@ -218,7 +219,7 @@ def process_test_data(file_name, word2idx):
 
     return test
 
-def evaluate(batches, number_of_words):
+def evaluate(batches):
     total_loss = 0
     for batch in tqdm(batches):
         model.zero_grad()
@@ -234,14 +235,15 @@ def evaluate(batches, number_of_words):
         loss = loss_function(pred_y, true_y)
         total_loss += loss.data
 
-
-    print ("Loss: ", total_loss.cpu().numpy()/number_of_words )
+    return total_loss.cpu().numpy()
+    #print ("Loss: ", total_loss.cpu().numpy()/len(batches))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LSTM language model')
 
     parser.add_argument('--train', type=str, help='training data')
+    parser.add_argument('--validation', type=str, help='validation data')
     parser.add_argument('--test', type=str, help='test data')
     parser.add_argument('--embedding_size', type=int, default=650, help='word embedding size')
     parser.add_argument('--rnn_size', type=int, default=650, help='hidden layer size')
@@ -258,21 +260,29 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
+    # load data
     train, word2idx, idx2word = process_train_data(args.train, args.vocab_size)
-    nwords = len(train)
+    train_batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
 
-    batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
+    valid = process_test_data(args.validation, word2idx)
+    valid_batches = batchify(valid, args.sequence_length, args.batch_size, word2idx)
+
+    test = process_test_data(args.test, word2idx)
+    test_batches = batchify(test, args.sequence_length, args.batch_size, word2idx)
+    
 
     # define loss, model and optimization
     model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers).to(device)
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
+    # model summary
     print (str(model))
-    # train
-    train_model(batches, word2idx, args.epochs, nwords)
 
-    # evaluate model
-    test = process_test_data(args.test, word2idx)
-    test_batches = batchify(test, args.sequence_length, args.batch_size, word2idx)
-    evaluate(test_batches, len(test))
+    # training
+    nwords = len(train)
+    train_model(train_batches, word2idx, args.epochs, valid_batches)
+
+    # evaluate on test
+    print ("Test loss: ", evaluate(test_batches)/len(test_batches))
+
