@@ -130,16 +130,18 @@ def batchify(train, max_sequence_length, batch_size, word2idx):
     return batches
 
 class LSTMLM(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers):
+    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers, dropout):
         super(LSTMLM, self).__init__()
         
         self.hidden_size = hidden_size   
         self.batch_size = batch_size
         self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
+        self.dropout = nn.Dropout(dropout)
         # added separate layers to have control over each layer
         self.lstms = nn.ModuleList([])
         self.lstms.append(nn.LSTM(embedding_size, hidden_size))
         for l in range(1,layers):
+            #self.lstms.append(nn.dropout(dropout))
             self.lstms.append(nn.LSTM(hidden_size, hidden_size))
 
         self.hidden2output = nn.Linear(hidden_size, vocab_size)
@@ -159,6 +161,7 @@ class LSTMLM(nn.Module):
         lstm_outs.append(lstm_out)
         hiddens.append(self.hidden)
         for idx in range(1, len(self.lstms)):
+            self.dropout(lstm_outs[idx-1])
             lstm_out, self.hidden = self.lstms[idx](lstm_outs[idx-1], hiddens[idx-1])
             lstm_outs.append(lstm_out)
             hiddens.append(self.hidden)
@@ -252,6 +255,7 @@ if __name__ == "__main__":
     parser.add_argument('--vocab_size', type=int, default=10000)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--rnn_layers', type=int, default=1)
+    parser.add_argument('--dropout', type=float, default=0.0)
 
     args = parser.parse_args()
 
@@ -272,7 +276,7 @@ if __name__ == "__main__":
     
 
     # define loss, model and optimization
-    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers).to(device)
+    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout).to(device)
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
