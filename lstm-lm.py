@@ -15,99 +15,38 @@ import h5py
 import json
 import os
 
+def load_data(data_dir):
+    try:
+        train = read_h5py(data_dir+"/processed_train.h5", "train")
+        valid = read_h5py(data_dir+"/processed_valid.h5", "valid")
+        test = read_h5py(data_dir+"/processed_test.h5", "test")
+        word2idx = read_json(data_dir+"/vocab.json")
+        return train, valid, test, word2idx
 
-## TODO 
-# Check if parameters are same as saved for processed data
-
-def process_train_data(file_path, vocab_size):
+    except FileNotFoundError:
+        print ("processed_train.h5, valid, test or vocab.json do not exist in directory ", data_dir)
+        exit()
     
-    word2idx = {}
-    idx2word = {}
-    train = []
-
-    if os.path.exists("data/processed_train.h5") and os.path.exists("data/vocab.json"):
-        print ("Loading processed files..")
-        train = read_h5py("processed_train.h5")
-        word2idx = read_json("vocab.json")
-        idx2word = {value:key for key,value in word2idx.items()}
-
-    else:
-        print ("Processing files..")
-
-        if file_path != "":    
-            training_data = []
-            train_vocab = {}
-            with codecs.open(file_path) as fp:
-                for line in fp:
-                    words = line.strip().split()
-                    for word in words:
-                        if word not in train_vocab:
-                            train_vocab[word] = 1
-                        else:
-                            train_vocab[word] +=1
-                    training_data.append(words + ["eos"])
-            
-        else:    
-            training_data = [
-                ("The dog ate the apple eos".split()),
-                ("Everybody read that book eos".split()),
-                ("The cat ate the orange eos".split()),
-                ("Everybody eat the apple eos".split())
-            ]
-            training_data = training_data * 50
-            
-
-        print ("Number of words in training: ", len(training_data))
-        print ("A few training examples: ", training_data[0:3])
-
-        # prune vocab based on vocab size
-        sorted_train_vocab = sorted(train_vocab.items(), key=operator.itemgetter(1), reverse=True)
-        pruned_vocab = sorted_train_vocab[0:vocab_size]
-        pruned_vocab = ([i[0] for i in pruned_vocab])
-
-        # create word2idx    
-        word2idx["UNK"] = len(word2idx)
-        idx2word[word2idx["UNK"]] = "UNK"
-        word2idx["eos"] = len(word2idx)
-        idx2word[word2idx["eos"]] = "eos"
-
-        for idx, sent in enumerate(training_data):
-            for word in sent:
-                if word in pruned_vocab:
-                    if word not in word2idx:
-                        word2idx[word] = len(word2idx)
-                        idx2word[word2idx[word]] = word
-                    train.append(word2idx[word])
-                else:
-                    train.append(word2idx["UNK"])
-                
-        train = np.array(train, dtype=np.int)
-
-        print(train.shape)
-        if os.path.isdir("data"):
-            write_h5py(train, "train", "processed_train.h5")
-            write_json(word2idx, "vocab.json")
-
-    return train, word2idx, idx2word
+    #idx2word = {value:key for key,value in word2idx.items()}
+    return -1
 
 def write_json(data, file_name):
-    f = open("data/"+file_name,"w")
+    f = open(file_name,"w")
     f.write(json.dumps(data))
     f.close()
 
 def read_json(file_name):
-    with open("data/"+file_name) as f:
+    with open(file_name) as f:
         return json.load(f)
 
-def write_h5py(data, data_name, file_name):
-    handle = h5py.File("data/"+file_name, 'w')
-    handle.create_dataset(data_name, data=data)
-    print ("Saved data in: data/"+file_name)
+def write_h5py(data, type, file_name):
+    handle = h5py.File(file_name, 'w')
+    handle.create_dataset(type, data=data)
+    print ("Saved data in: "+file_name)
 
-def read_h5py(file_name):
-    handle = h5py.File("data/"+file_name, 'r')
-    return handle["train"][:]
-
+def read_h5py(file_name, type):
+    handle = h5py.File(file_name, 'r')
+    return handle[type][:]
 
 # set input in the form of tensor
 def prepare_input(batch):
@@ -170,7 +109,7 @@ class LSTMLM(nn.Module):
         return output_scores
 
 
-def train_model(train_batches, word2idx, epochs, valid_batches):
+def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
     for epoch in range(epochs):
         total_loss = 0
         for batch in tqdm(train_batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
@@ -191,36 +130,17 @@ def train_model(train_batches, word2idx, epochs, valid_batches):
             loss.backward()
             optimizer.step()
 
+        torch.save(model.state_dict(), model_save+"_"+str(epoch))
+
         print ("Training loss: ", total_loss.data.cpu().numpy()/len(train_batches))
+        model.eval()
         print ("Validation loss: ", evaluate(valid_batches)/len(valid_batches))
+        model.train()
 
-def process_test_data(file_name, word2idx):
-
-    if file_name != "":
-        
-        test_data = []
-        with codecs.open(file_name) as fp:
-            for line in fp:
-                test_data.append(line.strip().split() + ["eos"])
-    else:        
-        test_data = [
-            ("The dog ate the apple eos".split()),
-            ("Everybody read that book eos".split()),
-            ("The cat ate the orange eos".split()),
-            ("Everybody eat the apple eos".split())
-        ]
-
-    print ("Size of test data: ", len(test_data))
-    test = []
-    for sentence in test_data:
-        for word in sentence:
-            if word in word2idx:
-                test.append(word2idx[word])
-            else:
-                test.append(word2idx["UNK"])
-    test = np.array(test, dtype=np.int)
-
-    return test
+#def load_model():
+    ##Later to restore:
+#model.load_state_dict(torch.load(filepath))
+#model.eval()
 
 def evaluate(batches):
     total_loss = 0
@@ -239,23 +159,25 @@ def evaluate(batches):
         total_loss += loss.data
 
     return total_loss.cpu().numpy()
-    #print ("Loss: ", total_loss.cpu().numpy()/len(batches))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LSTM language model')
 
-    parser.add_argument('--train', type=str, help='training data')
-    parser.add_argument('--validation', type=str, help='validation data')
-    parser.add_argument('--test', type=str, help='test data')
+    #parser.add_argument('--train', type=str, help='training data')
+    #parser.add_argument('--validation', type=str, help='validation data')
+    #parser.add_argument('--test', type=str, help='test data')
+    #parser.add_argument('--vocab_size', type=int, default=10000)
+
+    parser.add_argument('--data_dir', type=str, required=True, help='input path to the processed input files')
     parser.add_argument('--embedding_size', type=int, default=650, help='word embedding size')
     parser.add_argument('--rnn_size', type=int, default=650, help='hidden layer size')
     parser.add_argument('--sequence_length', type=int, default=35)
     parser.add_argument('--batch_size', type=int, default=20)
-    parser.add_argument('--vocab_size', type=int, default=10000)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--rnn_layers', type=int, default=1)
     parser.add_argument('--dropout', type=float, default=0.0)
+    parser.add_argument('--output_model', type=str, required=True)
 
     args = parser.parse_args()
 
@@ -265,16 +187,16 @@ if __name__ == "__main__":
         device = torch.device("cpu")
 
     # load data
-    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size)
+    if not os.path.isdir(args.data_dir):
+        print ("Error: input files directory does not exist")
+        exit(0)
+
+    train, valid, test, word2idx = load_data(args.data_dir)
+
     train_batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
-
-    valid = process_test_data(args.validation, word2idx)
     valid_batches = batchify(valid, args.sequence_length, args.batch_size, word2idx)
-
-    test = process_test_data(args.test, word2idx)
     test_batches = batchify(test, args.sequence_length, args.batch_size, word2idx)
     
-
     # define loss, model and optimization
     model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout).to(device)
     loss_function = nn.NLLLoss()
@@ -284,8 +206,8 @@ if __name__ == "__main__":
     print (str(model))
 
     # training
-    nwords = len(train)
-    train_model(train_batches, word2idx, args.epochs, valid_batches)
+    #nwords = len(train)
+    train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model)
 
     # evaluate on test
     print ("Test loss: ", evaluate(test_batches)/len(test_batches))
