@@ -6,7 +6,7 @@ import numpy as np
 import h5py
 import json
 
-def process_train_data(file_name, vocab_size):
+def process_train_data(file_name, vocab_size, output_dir):
     word2idx = {}
     idx2word = {}
     train = []
@@ -53,12 +53,12 @@ def process_train_data(file_name, vocab_size):
             
     train = np.array(train, dtype=np.int)
 
-    write_h5py(train, "train", "processed_train.h5")
-    write_json(word2idx, "vocab.json")
+    write_h5py(train, "train", output_dir+"/processed_train.h5")
+    write_json(word2idx, output_dir+"/vocab.json")
 
     return train, word2idx, idx2word
 
-def process_test_data(file_name, word2idx, type=""):
+def process_test_data(file_name, word2idx, output_dir, type):
     
     test_data = []
 
@@ -80,7 +80,7 @@ def process_test_data(file_name, word2idx, type=""):
                 test.append(word2idx["UNK"])
     test = np.array(test, dtype=np.int)
 
-    write_h5py(test, type, "processed_"+type+".h5")
+    write_h5py(test, type, output_dir+"/processed_"+type+".h5")
 
 
 def write_json(data, file_name):
@@ -88,18 +88,10 @@ def write_json(data, file_name):
     f.write(json.dumps(data))
     f.close()
 
-def read_json(file_name):
-    with open(file_name) as f:
-        return json.load(f)
-
 def write_h5py(data, data_name, file_name):
     handle = h5py.File(file_name, 'w')
     handle.create_dataset(data_name, data=data)
     print ("Saved.. ", file_name)
-
-#def read_h5py(file_name):
- #   handle = h5py.File("data/"+file_name, 'r')
-  #  return handle["train"][:]
 
 
 if __name__ == "__main__":
@@ -109,13 +101,18 @@ if __name__ == "__main__":
     parser.add_argument('--validation', type=str, help='validation data')
     parser.add_argument('--test', type=str, help='test data')
     parser.add_argument('--vocab_size', type=int, default=10000)
+    parser.add_argument('--output_dir', type=str, default=".")
 
     args = parser.parse_args()
 
+    if not os.path.isdir(args.output_dir):
+        print ("Error: Output director does not exist")
+        exit(0)
+        
     # load data
-    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size)
+    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size, args.output_dir)
     if args.validation != None:
-        process_test_data(args.validation, word2idx, type="valid")
+        process_test_data(args.validation, word2idx, args.output_dir, type="valid")
     if args.test != None:
-        process_test_data(args.test, word2idx, type="test")
+        process_test_data(args.test, word2idx, args.output_dir, type="test")
 
