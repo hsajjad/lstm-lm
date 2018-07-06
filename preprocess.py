@@ -88,9 +88,9 @@ def write_json(data, file_name):
     f.write(json.dumps(data))
     f.close()
 
-def write_h5py(data, data_name, file_name):
+def write_h5py(data, type, file_name):
     handle = h5py.File(file_name, 'w')
-    handle.create_dataset(data_name, data=data)
+    handle.create_dataset(type, data=data)
     print ("Saved.. ", file_name)
 
 
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     if not os.path.isdir(args.output_dir):
         print ("Error: Output director does not exist")
         exit(0)
-        
+
     # load data
     train, word2idx, idx2word = process_train_data(args.train, args.vocab_size, args.output_dir)
     if args.validation != None:
