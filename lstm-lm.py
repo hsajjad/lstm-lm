@@ -14,13 +14,14 @@ import argparse
 import h5py
 import json
 import os
+import utils
 
 def load_data(data_dir):
     try:
-        train = read_h5py(data_dir+"/processed_train.h5", "train")
-        valid = read_h5py(data_dir+"/processed_valid.h5", "valid")
-        test = read_h5py(data_dir+"/processed_test.h5", "test")
-        word2idx = read_json(data_dir+"/vocab.json")
+        train = utils.read_h5py(data_dir+"/processed_train.h5", "train")
+        valid = utils.read_h5py(data_dir+"/processed_valid.h5", "valid")
+        test = utils.read_h5py(data_dir+"/processed_test.h5", "test")
+        word2idx = utils.read_json(data_dir+"/vocab.json")
         return train, valid, test, word2idx
 
     except FileNotFoundError:
@@ -29,44 +30,6 @@ def load_data(data_dir):
     
     #idx2word = {value:key for key,value in word2idx.items()}
     return -1
-
-def write_json(data, file_name):
-    f = open(file_name,"w")
-    f.write(json.dumps(data))
-    f.close()
-
-def read_json(file_name):
-    with open(file_name) as f:
-        return json.load(f)
-
-def write_h5py(data, type, file_name):
-    handle = h5py.File(file_name, 'w')
-    handle.create_dataset(type, data=data)
-    print ("Saved data in: "+file_name)
-
-def read_h5py(file_name, type):
-    handle = h5py.File(file_name, 'r')
-    return handle[type][:]
-
-# set input in the form of tensor
-def prepare_input(batch):
-     tensor_ids = torch.from_numpy(batch).to(device)
-     return tensor_ids
-
-def batchify(train, max_sequence_length, batch_size, word2idx):    
-    batch_sequence_length = max_sequence_length*batch_size
-
-    pad = np.array((batch_sequence_length - len(train)%(batch_sequence_length)) * [word2idx["eos"]], dtype=np.int)
-
-    batches = np.concatenate((train, pad)).reshape((-1, batch_size, max_sequence_length))
-    # batches is now [num_batches x sentences_in_minibatch x words_in_sentence]
-    
-    # torch expects words_in_sentence x sentences_in_minibatch
-    # so, swap
-    batches = np.swapaxes(batches, 1, 2)
-    
-    print("Shape of data: ", batches.shape)
-    return batches
 
 class LSTMLM(nn.Module):
     def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers, dropout):
@@ -116,8 +79,8 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
             model.zero_grad()
             model.hidden = model.init_hidden()
             
-            X = prepare_input(batch[:-1,:])
-            y = prepare_input(batch[1:,:])
+            X = utils.prepare_input(batch[:-1,:])
+            y = utils.prepare_input(batch[1:,:])
 
             output_scores = model(X).to(device)
 
@@ -137,19 +100,14 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
         print ("Validation loss: ", evaluate(valid_batches)/len(valid_batches))
         model.train()
 
-#def load_model():
-    ##Later to restore:
-#model.load_state_dict(torch.load(filepath))
-#model.eval()
-
 def evaluate(batches):
     total_loss = 0
     for batch in tqdm(batches):
         model.zero_grad()
         model.hidden = model.init_hidden()
 
-        X = prepare_input(batch[:-1,:])
-        y = prepare_input(batch[1:,:])
+        X = utils.prepare_input(batch[:-1,:])
+        y = utils.prepare_input(batch[1:,:])
 
         output_scores = model(X)
         true_y = y.contiguous().view(-1, 1).squeeze()
@@ -163,11 +121,6 @@ def evaluate(batches):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LSTM language model')
-
-    #parser.add_argument('--train', type=str, help='training data')
-    #parser.add_argument('--validation', type=str, help='validation data')
-    #parser.add_argument('--test', type=str, help='test data')
-    #parser.add_argument('--vocab_size', type=int, default=10000)
 
     parser.add_argument('--data_dir', type=str, required=True, help='input path to the processed input files')
     parser.add_argument('--embedding_size', type=int, default=650, help='word embedding size')
@@ -191,11 +144,17 @@ if __name__ == "__main__":
         print ("Error: input files directory does not exist")
         exit(0)
 
+    # TODO: save model parameters
+    #param["embeddings_size"] = args.embedding_size
+    #param["rnn_size"] = args.rnn_size
+    #param["rnn_layers"] = args.rnn_layers
+    #param["dropout"] = args.dropout
+
     train, valid, test, word2idx = load_data(args.data_dir)
 
-    train_batches = batchify(train, args.sequence_length, args.batch_size, word2idx)
-    valid_batches = batchify(valid, args.sequence_length, args.batch_size, word2idx)
-    test_batches = batchify(test, args.sequence_length, args.batch_size, word2idx)
+    train_batches = utils.batchify(train, args.sequence_length, args.batch_size, word2idx)
+    valid_batches = utils.batchify(valid, args.sequence_length, args.batch_size, word2idx)
+    test_batches =  utils.batchify(test, args.sequence_length, args.batch_size, word2idx)
     
     # define loss, model and optimization
     model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout).to(device)
@@ -206,7 +165,6 @@ if __name__ == "__main__":
     print (str(model))
 
     # training
-    #nwords = len(train)
     train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model)
 
     # evaluate on test

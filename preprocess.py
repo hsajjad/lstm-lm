@@ -3,8 +3,7 @@ import codecs
 import argparse
 import operator
 import numpy as np
-import h5py
-import json
+import utils
 
 def process_train_data(file_name, vocab_size, output_dir):
     word2idx = {}
@@ -36,8 +35,8 @@ def process_train_data(file_name, vocab_size, output_dir):
     pruned_vocab = ([i[0] for i in pruned_vocab])
 
     # create word2idx    
-    word2idx["UNK"] = len(word2idx)
-    idx2word[word2idx["UNK"]] = "UNK"
+    word2idx["<unk>"] = len(word2idx)
+    idx2word[word2idx["<unk>"]] = "<unk>"
     word2idx["eos"] = len(word2idx)
     idx2word[word2idx["eos"]] = "eos"
 
@@ -49,49 +48,11 @@ def process_train_data(file_name, vocab_size, output_dir):
                     idx2word[word2idx[word]] = word
                 train.append(word2idx[word])
             else:
-                train.append(word2idx["UNK"])
-            
+                train.append(word2idx["<unk>"])
+    print (train[0:2])
     train = np.array(train, dtype=np.int)
 
-    write_h5py(train, "train", output_dir+"/processed_train.h5")
-    write_json(word2idx, output_dir+"/vocab.json")
-
     return train, word2idx, idx2word
-
-def process_test_data(file_name, word2idx, output_dir, type):
-    
-    test_data = []
-
-    try:
-        with codecs.open(file_name) as fp:
-            for line in fp:
-                test_data.append(line.strip().split() + ["eos"])
-    except FileNotFoundError:
-        print ("File does not exist: ", file_name)
-        exit()
-
-    print ("Size of test data: ", len(test_data))
-    test = []
-    for sentence in test_data:
-        for word in sentence:
-            if word in word2idx:
-                test.append(word2idx[word])
-            else:
-                test.append(word2idx["UNK"])
-    test = np.array(test, dtype=np.int)
-
-    write_h5py(test, type, output_dir+"/processed_"+type+".h5")
-
-
-def write_json(data, file_name):
-    f = open(file_name,"w")
-    f.write(json.dumps(data))
-    f.close()
-
-def write_h5py(data, type, file_name):
-    handle = h5py.File(file_name, 'w')
-    handle.create_dataset(type, data=data)
-    print ("Saved.. ", file_name)
 
 
 if __name__ == "__main__":
@@ -110,9 +71,16 @@ if __name__ == "__main__":
         exit(0)
 
     # load data
-    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size, args.output_dir)
+    output_dir = args.output_dir
+
+    train, word2idx, idx2word = process_train_data(args.train, args.vocab_size, output_dir)
+    utils.write_h5py(train, "train", output_dir+"/processed_train.h5")
+    utils.write_json(word2idx, output_dir+"/vocab.json")
+
     if args.validation != None:
-        process_test_data(args.validation, word2idx, args.output_dir, type="valid")
+        valid = utils.process_test_data(args.validation, word2idx)
+        utils.write_h5py(valid, "valid", output_dir+"/processed_valid.h5")
     if args.test != None:
-        process_test_data(args.test, word2idx, args.output_dir, type="test")
+        test = utils.process_test_data(args.test, word2idx)
+        utils.write_h5py(test, "test", output_dir+"/processed_test.h5")
 
