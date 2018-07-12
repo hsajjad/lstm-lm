@@ -34,7 +34,7 @@ def process_test_data(file_name, word2idx):
             if word in word2idx:
                 test.append(word2idx[word])
             else:
-                test.append(word2idx["UNK"])
+                test.append(word2idx["<unk>"])
     test = np.array(test, dtype=np.int)
     return test
 
