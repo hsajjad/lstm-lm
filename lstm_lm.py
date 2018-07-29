@@ -32,7 +32,7 @@ def load_data(data_dir):
     return -1
 
 class LSTMLM(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers, dropout):
+    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers, dropout, use_gpu):
         super(LSTMLM, self).__init__()
         
         self.hidden_size = hidden_size   
@@ -47,12 +47,15 @@ class LSTMLM(nn.Module):
             self.lstms.append(nn.LSTM(hidden_size, hidden_size))
 
         self.hidden2output = nn.Linear(hidden_size, vocab_size)
-        self.hidden = self.init_hidden()        
+        self.hidden = self.init_hidden(use_gpu)        
 
-    def init_hidden(self):
+    def init_hidden(self, use_gpu):
         # set the dimenionaly of the hidden layer
         cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
         hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
+        if use_gpu:
+            cell = cell.cuda()
+            hid = hid.cuda()
         return (cell, hid)
     
     def forward(self, sequence):
@@ -77,7 +80,7 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save, para
         total_loss = 0
         for batch in tqdm(train_batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
             model.zero_grad()
-            model.hidden = model.init_hidden()
+            model.hidden = model.init_hidden(use_gpu)
             
             X = utils.prepare_input(batch[:-1,:])
             y = utils.prepare_input(batch[1:,:])
@@ -112,7 +115,7 @@ def evaluate(batches):
     total_loss = 0
     for batch in tqdm(batches):
         model.zero_grad()
-        model.hidden = model.init_hidden()
+        model.hidden = model.init_hidden(use_gpu)
 
         X = utils.prepare_input(batch[:-1,:])
         y = utils.prepare_input(batch[1:,:])
@@ -162,7 +165,7 @@ if __name__ == "__main__":
     test_batches =  utils.batchify(test, args.sequence_length, args.batch_size, word2idx)
     
     # define loss, model and optimization
-    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout)
+    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout, use_gpu)
     if use_gpu:
         model.cuda()
     loss_function = nn.NLLLoss()
