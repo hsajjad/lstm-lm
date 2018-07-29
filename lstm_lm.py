@@ -51,8 +51,8 @@ class LSTMLM(nn.Module):
 
     def init_hidden(self):
         # set the dimenionaly of the hidden layer
-        cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size)).to(device)
-        hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size)).to(device)
+        cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
+        hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
         return (cell, hid)
     
     def forward(self, sequence):
@@ -72,7 +72,7 @@ class LSTMLM(nn.Module):
         return output_scores
 
 
-def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
+def train_model(train_batches, word2idx, epochs, valid_batches, model_save, params, use_gpu):
     for epoch in range(epochs):
         total_loss = 0
         for batch in tqdm(train_batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
@@ -82,7 +82,11 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
             X = utils.prepare_input(batch[:-1,:])
             y = utils.prepare_input(batch[1:,:])
 
-            output_scores = model(X).to(device)
+            if use_gpu:
+                X.cuda()
+                y.cuda()
+
+            output_scores = model(X)
 
             true_y = y.contiguous().view(-1, 1).squeeze()
             pred_y = output_scores.view(-1, len(word2idx))
@@ -93,12 +97,16 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save):
             loss.backward()
             optimizer.step()
 
-        torch.save(model.state_dict(), model_save+"_"+str(epoch))
+
+        params["model"] = model.state_dict()
+        params["optimizer"] = optimizer.state_dict()
+        torch.save(params, model_save+"_"+str(epoch))
 
         print ("Training loss: ", total_loss.data.cpu().numpy()/len(train_batches))
         model.eval()
         print ("Validation loss: ", evaluate(valid_batches)/len(valid_batches))
         model.train()
+
 
 def evaluate(batches):
     total_loss = 0
@@ -134,21 +142,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    use_gpu = torch.cuda.is_available()
 
     # load data
     if not os.path.isdir(args.data_dir):
         print ("Error: input files directory does not exist")
         exit(0)
 
-    # TODO: save model parameters
-    #param["embeddings_size"] = args.embedding_size
-    #param["rnn_size"] = args.rnn_size
-    #param["rnn_layers"] = args.rnn_layers
-    #param["dropout"] = args.dropout
+    params = {}
+    params["embedding_size"] = args.embedding_size
+    params["rnn_size"] = args.rnn_size
+    params["rnn_layers"] = args.rnn_layers
+    params["dropout"] = args.dropout
 
     train, valid, test, word2idx = load_data(args.data_dir)
 
@@ -157,7 +162,9 @@ if __name__ == "__main__":
     test_batches =  utils.batchify(test, args.sequence_length, args.batch_size, word2idx)
     
     # define loss, model and optimization
-    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout).to(device)
+    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout)
+    if use_gpu:
+        model.cuda()
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
@@ -165,7 +172,7 @@ if __name__ == "__main__":
     print (str(model))
 
     # training
-    train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model)
+    train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model, params, use_gpu)
 
     # evaluate on test
     print ("Test loss: ", evaluate(test_batches)/len(test_batches))
