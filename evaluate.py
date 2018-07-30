@@ -1,10 +1,15 @@
 import utils
 import argparse
 import torch
+import lstm_lm
+import torch.optim as optim
+import torch.nn as nn
 
-def load_model(filepath, model):
-    model.load_state_dict(torch.load(filepath))
-    return model
+def load_model(params, model, optimizer):
+    #model.load_state_dict(torch.load(filepath))
+    model.load_state_dict(params["model"])
+    optimizer.load_state_dict(params["optimizer"])
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LSTM language model')
@@ -15,23 +20,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-
-    # load model
-    model = load_model(args.model, model)
-    model.eval() # change state to evaluation mode
-
-    # load data
+    # load dictionary
     word2idx = utils.read_json(args.vocab)
-    test = utils.process_test_data(args.test, word2idx)
+    # load data
+    test = utils.process_valid_data(args.test, word2idx)
+    # load model #
+    params = torch.load(args.model)
     
-    # batchify
-    for sentence in test:
-        testbatch = utils.batchify(sentence, len(sentence), 1, word2idx)
-        utils.evaluate(testbatch)
+    test_batches =  utils.batchify(test, params["sequence_length"], params["batch_size"], word2idx)
+    
+    model = lstm_lm.LSTMLM(params)
+    optimizer = optim.SGD(model.parameters(), lr=0.1)
+    loss_function = nn.NLLLoss()
+    load_model(params, model, optimizer)
+
+    model.eval() # change state to evaluation mode
+    print ("Test perplexity: ", utils.evaluate(model, loss_function, test_batches)/len(test_batches))
 
 
   

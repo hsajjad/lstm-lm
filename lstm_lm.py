@@ -32,28 +32,33 @@ def load_data(data_dir):
     return -1
 
 class LSTMLM(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size, batch_size, layers, dropout, use_gpu):
+    def __init__(self, params): #embedding_size, hidden_size, vocab_size, batch_size, layers, dropout, use_gpu):
         super(LSTMLM, self).__init__()
         
-        self.hidden_size = hidden_size   
-        self.batch_size = batch_size
-        self.word_embeddings = nn.Embedding(vocab_size, embedding_size)
-        self.dropout = nn.Dropout(dropout)
+        self.use_gpu = params["use_gpu"]
+        self.hidden_size = params["rnn_size"]
+        self.vocab_size = params["vocab_size"] 
+        self.batch_size = params["batch_size"]
+        self.embedding_size = params["embedding_size"]
+        self.dropout = nn.Dropout(params["dropout"])
+        self.layers = params["rnn_layers"]
+        self.word_embeddings = nn.Embedding(self.vocab_size, self.embedding_size)
+
         # added separate layers to have control over each layer
         self.lstms = nn.ModuleList([])
-        self.lstms.append(nn.LSTM(embedding_size, hidden_size))
-        for l in range(1,layers):
+        self.lstms.append(nn.LSTM(self.embedding_size, self.hidden_size))
+        for l in range(1,self.layers):
             #self.lstms.append(nn.dropout(dropout))
-            self.lstms.append(nn.LSTM(hidden_size, hidden_size))
+            self.lstms.append(nn.LSTM(self.hidden_size, self.hidden_size))
 
-        self.hidden2output = nn.Linear(hidden_size, vocab_size)
-        self.hidden = self.init_hidden(use_gpu)        
+        self.hidden2output = nn.Linear(self.hidden_size, self.vocab_size)
+        self.hidden = self.init_hidden()
 
-    def init_hidden(self, use_gpu):
+    def init_hidden(self):
         # set the dimenionaly of the hidden layer
         cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
         hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
-        if use_gpu:
+        if self.use_gpu:
             cell = cell.cuda()
             hid = hid.cuda()
         return (cell, hid)
@@ -80,7 +85,7 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save, para
         total_loss = 0
         for batch in tqdm(train_batches, desc="Epoch %d/%d"%(epoch+1, epochs)):
             model.zero_grad()
-            model.hidden = model.init_hidden(use_gpu)
+            model.hidden = model.init_hidden()
             
             X = utils.prepare_input(batch[:-1,:])
             y = utils.prepare_input(batch[1:,:])
@@ -100,34 +105,15 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save, para
             loss.backward()
             optimizer.step()
 
-
         params["model"] = model.state_dict()
         params["optimizer"] = optimizer.state_dict()
+        params["epoch"] = epoch
         torch.save(params, model_save+"_"+str(epoch))
 
         print ("Training loss: ", total_loss.data.cpu().numpy()/len(train_batches))
         model.eval()
-        print ("Validation loss: ", evaluate(valid_batches)/len(valid_batches))
+        print ("Validation loss: ", utils.evaluate(model, loss_function, valid_batches)/len(valid_batches))
         model.train()
-
-
-def evaluate(batches):
-    total_loss = 0
-    for batch in tqdm(batches):
-        model.zero_grad()
-        model.hidden = model.init_hidden(use_gpu)
-
-        X = utils.prepare_input(batch[:-1,:])
-        y = utils.prepare_input(batch[1:,:])
-
-        output_scores = model(X)
-        true_y = y.contiguous().view(-1, 1).squeeze()
-        pred_y = output_scores.view(-1, len(word2idx))
-
-        loss = loss_function(pred_y, true_y)
-        total_loss += loss.data
-
-    return total_loss.cpu().numpy()
 
 
 if __name__ == "__main__":
@@ -157,15 +143,19 @@ if __name__ == "__main__":
     params["rnn_size"] = args.rnn_size
     params["rnn_layers"] = args.rnn_layers
     params["dropout"] = args.dropout
+    params["use_gpu"] = use_gpu
+    params["sequence_length"] = args.sequence_length
+    params["batch_size"] = args.batch_size
 
     train, valid, test, word2idx = load_data(args.data_dir)
+    params["vocab_size"] = len(word2idx)
 
     train_batches = utils.batchify(train, args.sequence_length, args.batch_size, word2idx)
     valid_batches = utils.batchify(valid, args.sequence_length, args.batch_size, word2idx)
     test_batches =  utils.batchify(test, args.sequence_length, args.batch_size, word2idx)
     
     # define loss, model and optimization
-    model = LSTMLM(args.embedding_size, args.rnn_size, len(word2idx), args.batch_size, args.rnn_layers, args.dropout, use_gpu)
+    model = LSTMLM(params)
     if use_gpu:
         model.cuda()
     loss_function = nn.NLLLoss()
@@ -178,5 +168,5 @@ if __name__ == "__main__":
     train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model, params, use_gpu)
 
     # evaluate on test
-    print ("Test loss: ", evaluate(test_batches)/len(test_batches))
+    print ("Test loss: ", utils.evaluate(model, loss_function, test_batches)/len(test_batches))
 
