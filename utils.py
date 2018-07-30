@@ -8,14 +8,42 @@ import torch.nn as nn
 import torch.autograd as autograd
 import torch.nn.functional as F
 import torch.optim as optim
+from tqdm import tqdm
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
     device = torch.device("cpu")
 
+def process_test_data_by_sentence(file_name, word2idx):
+    data = []
 
-def process_test_data(file_name, word2idx):
+    try:
+        with codecs.open(file_name) as fp:
+            for line in fp:
+                data.append(line.strip().split() + ["eos"])
+    except FileNotFoundError:
+        print ("File does not exist: ", file_name)
+        exit()
+
+    print ("Size of data: ", len(data))
+    test = []
+    sent = []
+    for sentence in data:
+        sent = []
+        for word in sentence:
+            if word in word2idx:
+                sent.append(word2idx[word])
+            else:
+                sent.append(word2idx["<unk>"])
+        test.append(np.array(sent))
+
+    return test
+
+
+
+
+def process_valid_data(file_name, word2idx):
     
     data = []
 
@@ -78,7 +106,7 @@ def prepare_input(batch):
     return tensor_ids
 
 
-def evaluate(batches):
+def evaluate(model, loss_function, batches):
     total_loss = 0
     for batch in tqdm(batches):
         model.zero_grad()
@@ -89,7 +117,7 @@ def evaluate(batches):
 
         output_scores = model(X)
         true_y = y.contiguous().view(-1, 1).squeeze()
-        pred_y = output_scores.view(-1, len(word2idx))
+        pred_y = output_scores.view(-1, model.vocab_size)
 
         loss = loss_function(pred_y, true_y)
         total_loss += loss.data

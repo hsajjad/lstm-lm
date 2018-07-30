@@ -49,7 +49,7 @@ def process_train_data(file_name, vocab_size, output_dir):
                 train.append(word2idx[word])
             else:
                 train.append(word2idx["<unk>"])
-    print (train[0:2])
+                
     train = np.array(train, dtype=np.int)
 
     return train, word2idx, idx2word
@@ -78,9 +78,9 @@ if __name__ == "__main__":
     utils.write_json(word2idx, output_dir+"/vocab.json")
 
     if args.validation != None:
-        valid = utils.process_test_data(args.validation, word2idx)
+        valid = utils.process_valid_data(args.validation, word2idx)
         utils.write_h5py(valid, "valid", output_dir+"/processed_valid.h5")
     if args.test != None:
-        test = utils.process_test_data(args.test, word2idx)
+        test = utils.process_valid_data(args.test, word2idx)
         utils.write_h5py(test, "test", output_dir+"/processed_test.h5")
 
