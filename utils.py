@@ -94,7 +94,7 @@ def batchify(data, max_sequence_length, batch_size, word2idx):
     # so, swap
     batches = np.swapaxes(batches, 1, 2)
 
-    print("Shape of data: ", batches.shape)
+    #print("Shape of data: ", batches.shape)
     return batches
 
 def prepare_input(batch):
@@ -143,4 +143,4 @@ def predict(model, batch, idx2word, use_gpu): # batch of one word
     values, indices = torch.max(pred_y, 1)
     print(idx2word[indices[0].item()])
 
-    return 1
+    return idx2word[indices[0].item()]

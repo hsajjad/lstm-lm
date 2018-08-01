@@ -28,19 +28,25 @@ if __name__ == "__main__":
     # load model #
     params = torch.load(args.model)
 
-# process input word
-    test = [word2idx[args.test] if args.test in word2idx else word2idx["<unk>"]]
-    test = np.array(test, dtype=np.int)
-    print (test)
-    test_batch =  utils.batchify(test, 1, 1, word2idx)
-    print ("test batch", test_batch)
     model = lstm_lm.LSTMLM(params)
     optimizer = optim.SGD(model.parameters(), lr=0.1)
     loss_function = nn.NLLLoss()
     load_model(params, model, optimizer)
 
+    if params["use_gpu"]:
+        model.cuda()
+
     model.eval() # change state to evaluation mode
-    utils.predict(model, test_batch, idx2word)
+
+
+    # process input word
+    test = args.test
+    print (test)
+    while (word2idx[test] != word2idx["eos"]):
+        test = [word2idx[args.test] if test in word2idx else word2idx["<unk>"]]
+        test = np.array(test, dtype=np.int)
+        test_batch =  utils.batchify(test, 1, 1, word2idx)
+        test = utils.predict(model, test_batch, idx2word, params["use_gpu"])
 
 
   
