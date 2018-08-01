@@ -27,15 +27,15 @@ if __name__ == "__main__":
     # load model #
     params = torch.load(args.model)
     
-    test_batches =  utils.batchify(test, params["sequence_length"], params["batch_size"], word2idx)
-    print (test_batches)
+    test_batches = utils.batchify(test, params["sequence_length"], params["batch_size"], word2idx)
+
     model = lstm_lm.LSTMLM(params)
     optimizer = optim.SGD(model.parameters(), lr=0.1)
     loss_function = nn.NLLLoss()
     load_model(params, model, optimizer)
 
     model.eval() # change state to evaluation mode
-    print ("Test perplexity: ", utils.evaluate(model, loss_function, test_batches)/len(test_batches))
+    print ("Test perplexity: ", utils.evaluate(model, loss_function, test_batches, params["use_gpu"])/len(test_batches))
 
 
   

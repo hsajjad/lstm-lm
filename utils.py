@@ -10,11 +10,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-else:
-    device = torch.device("cpu")
-
 def process_test_data_by_sentence(file_name, word2idx):
     data = []
 
@@ -103,11 +98,11 @@ def batchify(data, max_sequence_length, batch_size, word2idx):
     return batches
 
 def prepare_input(batch):
-    tensor_ids = torch.from_numpy(batch).to(device)
+    tensor_ids = torch.from_numpy(batch)
     return tensor_ids
 
 
-def evaluate(model, loss_function, batches):
+def evaluate(model, loss_function, batches, use_gpu):
     total_loss = 0
     for batch in tqdm(batches):
         model.zero_grad()
@@ -115,7 +110,11 @@ def evaluate(model, loss_function, batches):
 
         X = prepare_input(batch[:-1,:])
         y = prepare_input(batch[1:,:])
-        print(X.shape)
+
+        if use_gpu:
+            X = X.cuda()
+            y = y.cuda()
+        
         output_scores = model(X)
         true_y = y.contiguous().view(-1, 1).squeeze()
         pred_y = output_scores.view(-1, model.vocab_size)
@@ -125,16 +124,17 @@ def evaluate(model, loss_function, batches):
 
     return total_loss.cpu().numpy()
 
-def predict(model, batch, idx2word): # batch of one word
+def predict(model, batch, idx2word, use_gpu): # batch of one word
     
     model.batch_size = 1
     model.zero_grad()
     model.hidden = model.init_hidden()
 
-    #X = prepare_input(batch[:-1,:])
+    tensor_ids = torch.from_numpy(batch[0,:])
 
-    tensor_ids = torch.from_numpy(batch[0,:]).to(device)
-    # print (tensor_ids.shape)
+    if use_gpu:
+        tensor_ids = tensor_ids.cuda()
+
     output_scores = model(tensor_ids)
 
     # print (output_scores)
