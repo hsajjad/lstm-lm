@@ -28,7 +28,7 @@ if __name__ == "__main__":
     params = torch.load(args.model)
     
     test_batches =  utils.batchify(test, params["sequence_length"], params["batch_size"], word2idx)
-    
+    print (test_batches)
     model = lstm_lm.LSTMLM(params)
     optimizer = optim.SGD(model.parameters(), lr=0.1)
     loss_function = nn.NLLLoss()
