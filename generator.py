@@ -43,7 +43,7 @@ if __name__ == "__main__":
     test = args.test
     print (test)
     i = 0
-    while (word2idx[test] != word2idx["eos"] and i == 100):
+    while (i != 100):
         test = [word2idx[test] if test in word2idx else word2idx["<unk>"]]
         test = np.array(test, dtype=np.int)
         test_batch =  utils.batchify(test, 1, 1, word2idx)
