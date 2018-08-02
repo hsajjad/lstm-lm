@@ -48,7 +48,7 @@ class LSTMLM(nn.Module):
         self.lstms = nn.ModuleList([])
         self.lstms.append(nn.LSTM(self.embedding_size, self.hidden_size))
         for l in range(1,self.layers):
-            #self.lstms.append(nn.dropout(dropout))
+            self.lstms.append(nn.dropout(dropout))
             self.lstms.append(nn.LSTM(self.hidden_size, self.hidden_size))
 
         self.hidden2output = nn.Linear(self.hidden_size, self.vocab_size)
@@ -91,8 +91,8 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save, para
             y = utils.prepare_input(batch[1:,:])
 
             if use_gpu:
-                X.cuda()
-                y.cuda()
+                X = X.cuda()
+                y = y.cuda()
 
             output_scores = model(X)
 
@@ -157,6 +157,7 @@ if __name__ == "__main__":
     # define loss, model and optimization
     model = LSTMLM(params)
     if use_gpu:
+        print ("CUDA found!")
         model.cuda()
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
