@@ -35,8 +35,8 @@ if __name__ == "__main__":
     load_model(params, model, optimizer)
 
     if params["use_gpu"]:
-        model.cuda()
-        
+        model = model.cuda()
+
     model.eval() # change state to evaluation mode
     print ("Test perplexity: ", utils.evaluate(model, loss_function, test_batches, params["use_gpu"])/len(test_batches))
 

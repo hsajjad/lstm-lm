@@ -40,19 +40,24 @@ class LSTMLM(nn.Module):
         self.vocab_size = params["vocab_size"] 
         self.batch_size = params["batch_size"]
         self.embedding_size = params["embedding_size"]
-        self.dropout = params["dropout"]
-        self.num_layers = params["rnn_layers"]
+        self.dropout = nn.Dropout(params["dropout"])
+        self.layers = params["rnn_layers"]
         self.word_embeddings = nn.Embedding(self.vocab_size, self.embedding_size)
 
-        self.lstm = nn.LSTM(self.embedding_size, self.hidden_size, num_layers=self.num_layers, dropout=self.dropout)
+        # added separate layers to have control over each layer
+        self.lstms = nn.ModuleList([])
+        self.lstms.append(nn.LSTM(self.embedding_size, self.hidden_size))
+        for l in range(1,self.layers):
+            self.lstms.append(nn.dropout(dropout))
+            self.lstms.append(nn.LSTM(self.hidden_size, self.hidden_size))
 
         self.hidden2output = nn.Linear(self.hidden_size, self.vocab_size)
         self.hidden = self.init_hidden()
 
     def init_hidden(self):
         # set the dimenionaly of the hidden layer
-        cell = autograd.Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size))
-        hid = autograd.Variable(torch.zeros(self.num_layers, self.batch_size, self.hidden_size))
+        cell = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
+        hid = autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_size))
         if self.use_gpu:
             cell = cell.cuda()
             hid = hid.cuda()
@@ -60,10 +65,20 @@ class LSTMLM(nn.Module):
     
     def forward(self, sequence):
         embeds = self.word_embeddings(sequence)
-        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
-        output_space = self.hidden2output(lstm_out)
+        lstm_outs = []
+        hiddens = []
+        lstm_out, self.hidden = self.lstms[0](embeds, self.hidden)
+        lstm_outs.append(lstm_out)
+        hiddens.append(self.hidden)
+        for idx in range(1, len(self.lstms)):
+            self.dropout(lstm_outs[idx-1])
+            lstm_out, self.hidden = self.lstms[idx](lstm_outs[idx-1], hiddens[idx-1])
+            lstm_outs.append(lstm_out)
+            hiddens.append(self.hidden)
+        output_space = self.hidden2output(lstm_outs[-1])
         output_scores = F.log_softmax(output_space, dim=2)
         return output_scores
+
 
 def train_model(train_batches, word2idx, epochs, valid_batches, model_save, params, use_gpu):
     for epoch in range(epochs):
@@ -97,7 +112,7 @@ def train_model(train_batches, word2idx, epochs, valid_batches, model_save, para
 
         print ("Training loss: ", total_loss.data.cpu().numpy()/len(train_batches))
         model.eval()
-        print ("Validation loss: ", utils.evaluate(model, loss_function, valid_batches, use_gpu)/len(valid_batches))
+        print ("Validation loss: ", utils.evaluate(model, loss_function, valid_batches)/len(valid_batches))
         model.train()
 
 
@@ -148,11 +163,11 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
     # model summary
-    print (model)
+    print (str(model))
 
     # training
     train_model(train_batches, word2idx, args.epochs, valid_batches, args.output_model, params, use_gpu)
 
     # evaluate on test
-    print ("Test loss: ", utils.evaluate(model, loss_function, test_batches, use_gpu)/len(test_batches))
+    print ("Test loss: ", utils.evaluate(model, loss_function, test_batches)/len(test_batches))
 
